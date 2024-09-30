@@ -552,6 +552,22 @@ void handle_read_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
     esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id, ESP_GATT_OK, &rsp);
 }
 
+// Function to convert byte array to text (string)
+void byte_array_to_text(const uint8_t *byte_array, size_t len)
+{
+    // Create a buffer large enough to store the string and a null terminator
+    char text_buffer[len + 1];
+
+    // Copy the byte array into the text buffer
+    memcpy(text_buffer, byte_array, len);
+
+    // Add a null terminator to the string
+    text_buffer[len] = '\0';
+
+    // Print the resulting text
+    printf("Converted text: %s\n", text_buffer);
+}
+
 // Handle write event by receiving the data from the client
 void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
@@ -571,14 +587,21 @@ void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 
         // Store the received data in the `write_char_value`
         memcpy(write_char_value, param->write.value, param->write.len);
-        // printf("Received write data: %.*s\n", param->write.len, param->write.value); // Log received data
         printf("Received write data: ");
         for (int i = 0; i < param->write.len; i++)
         {
             printf("%02x ", param->write.value[i]); // Print each byte as a two-digit hexadecimal number
         }
         printf("\n");
+        byte_array_to_text(param->write.value, param->write.len);
     }
+
+    // printf("Data stored in write_char_value: ");
+    // for (int i = 0; i < param->write.len; i++)
+    // {
+    //     printf("%02x ", write_char_value[i]); // Print each byte as a two-digit hexadecimal number
+    // }
+    // printf("\n");
 
     // Sending notification to the client
     const char *notify_data = "Message received"; // Data to send as notification
