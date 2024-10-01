@@ -1,10 +1,3 @@
-/*
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -25,7 +18,7 @@
 #define PREPARE_BUF_MAX_SIZE 1024
 
 static int connection_id = -1; // -1 indicates no active connection
-// static int conn_id_save;
+//  static int conn_id_save;
 
 // Static variables to store read/write data
 #define GATTS_CHAR_VAL_LEN_MAX 0x40
@@ -83,7 +76,6 @@ static const uint8_t BIKE_SERVICE_UUID[16] = {0x20, 0xd8, 0x3e, 0x12, 0x54, 0x1f
 static const uint8_t SPEED_CHARACTERSTICS_UUID[16] = {0x10, 0xd8, 0x3e, 0x12, 0x54, 0x1f, 0x94, 0xad, 0x6c, 0x4b, 0x92, 0x81, 0x22, 0x35, 0xc8, 0x2c};
 static const uint8_t GPS_LOCATION_CHARACTERSITICS_UUID[16] = {0x11, 0xd8, 0x3e, 0x12, 0x54, 0x1f, 0x94, 0xad, 0x6c, 0x4b, 0x92, 0x81, 0x22, 0x35, 0xc8, 0x2c};
 static const uint8_t UPLOAD_POINT_CHARACTERISTICS_UUID[16] = {0x62, 0xd8, 0x3e, 0x12, 0x54, 0x1f, 0x94, 0xad, 0x6c, 0x4b, 0x92, 0x81, 0x22, 0x35, 0xc8, 0x2c};
-
 /*service and characteristics UUID define*/
 
 // config adv data
@@ -143,7 +135,6 @@ static struct gatts_profile_inst heart_rate_profile_tab[HEART_PROFILE_NUM] = {
         .gatts_cb = gatts_profile_event_handler,
         .gatts_if = ESP_GATT_IF_NONE, /* Not get the gatt_if, so initial is ESP_GATT_IF_NONE */
     },
-
 };
 
 /*
@@ -338,8 +329,9 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
     case ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT:
 
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_SCAN_RSP_DATA_SET_COMPLETE_EVT");
         adv_config_done &= (~SCAN_RSP_CONFIG_FLAG);
+        printf("value of adv_config_done after scan_rsp_config_flag is: %d \n", adv_config_done);
         if (adv_config_done == 0)
         {
             esp_ble_gap_start_advertising(&heart_rate_adv_params);
@@ -348,7 +340,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
     case ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT:
 
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_ADV_DATA_SET_COMPLETE_EVT");
         adv_config_done &= (~ADV_CONFIG_FLAG);
         if (adv_config_done == 0)
         {
@@ -358,7 +350,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
     case ESP_GAP_BLE_ADV_START_COMPLETE_EVT:
 
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_ADV_START_COMPLETE_EVT");
         // advertising start complete event to indicate advertising start successfully or failed
         if (param->adv_start_cmpl.status != ESP_BT_STATUS_SUCCESS)
         {
@@ -412,17 +404,18 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
     case ESP_GAP_BLE_PASSKEY_NOTIF_EVT: /// the app will receive this evt when the IO  has Output capability and the peer device IO has Input capability.
         /// show the passkey number to the user to input it in the peer device.
 
-        ESP_LOGI(GATTS_TABLE_TAG, "The passkey Notify number:%06d", param->ble_security.key_notif.passkey);
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_PASSKEY_NOTIFY_EVT, The passkey Notify number:%06d", param->ble_security.key_notif.passkey);
         break;
 
     case ESP_GAP_BLE_KEY_EVT:
 
         // shows the ble key info share with peer device to the user.
-        ESP_LOGI(GATTS_TABLE_TAG, "key type = %s", esp_key_type_to_str(param->ble_security.ble_key.key_type));
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_KEY_EVT, key type = %s", esp_key_type_to_str(param->ble_security.ble_key.key_type));
         break;
 
     case ESP_GAP_BLE_AUTH_CMPL_EVT:
     {
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_AUTH_CMPL_EVT");
         esp_bd_addr_t bd_addr;
         memcpy(bd_addr, param->ble_security.auth_cmpl.bd_addr, sizeof(esp_bd_addr_t));
         ESP_LOGI(GATTS_TABLE_TAG, "remote BD_ADDR: %08x%04x",
@@ -491,7 +484,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         break;
 
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT");
         ESP_LOGI(GATTS_TABLE_TAG, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
                  param->update_conn_params.status,
                  param->update_conn_params.min_int,
@@ -500,6 +493,19 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                  param->update_conn_params.latency,
                  param->update_conn_params.timeout);
         break;
+
+    case ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT: // Event where RSSI is returned
+
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT");
+        if (param->read_rssi_cmpl.status == ESP_BT_STATUS_SUCCESS)
+        {
+            ESP_LOGI(GATTS_TABLE_TAG, "RSSI for the connection: %d", param->read_rssi_cmpl.rssi);
+        }
+        else
+        {
+            ESP_LOGE(GATTS_TABLE_TAG, "Failed to read RSSI");
+        }
+        break;
     default:
         break;
     }
@@ -507,7 +513,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
 void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param)
 {
-    ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
+    ESP_LOGI(GATTS_TABLE_TAG, "EXAMPLW_EXEC_WRITE_EVENT_ENV");
 
     if (param->exec_write.exec_write_flag == ESP_GATT_PREP_WRITE_EXEC && prepare_write_env->prepare_buf)
     {
@@ -637,9 +643,10 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
     case ESP_GATTS_REG_EVT:
 
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_REG_EVT");
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_REG_EVT, status: %d, app_id: %d\n", param->reg.status, param->reg.app_id);
 
         esp_ble_gap_set_device_name(EXAMPLE_DEVICE_NAME);
+        printf("Device name is: %s\n", EXAMPLE_DEVICE_NAME);
         // generate a resolvable random address
         esp_ble_gap_config_local_privacy(true);
         esp_ble_gatts_create_attr_tab(heart_rate_gatt_db, gatts_if,
@@ -647,8 +654,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
         break;
 
     case ESP_GATTS_READ_EVT:
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_READ_EVT");
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_READ_EVT received from conn_id: %d", param->read.conn_id);
+        // ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_READ_EVT");
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_READ_EVT, conn_id: %d, trans_id: %d, handle: %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
         handle_read_event(gatts_if, param);
         // ESP_LOGI(GATTS_TABLE_TAG, "GATT_READ_EVT, conn_id %d, trans_id %d, handle %d\n", param->read.conn_id, param->read.trans_id, param->read.handle);
         // esp_gatt_rsp_t rsp;
@@ -725,8 +732,11 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                  param->connect.remote_bda[4],
                  param->connect.remote_bda[5]);
         heart_rate_profile_tab[ESP_HEART_RATE_APP_ID].conn_id = param->connect.conn_id;
+
+        // esp_ble_gap_read_rssi();
         // start sent the update connection parameters to the peer device.
         esp_ble_gap_update_conn_params(&conn_params);
+        // Request RSSI from connected device
         break;
 
     case ESP_GATTS_DISCONNECT_EVT:
@@ -760,7 +770,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
     case ESP_GATTS_CREAT_ATTR_TAB_EVT:
     {
-        ESP_LOGI(GATTS_TABLE_TAG, "The number handle = %x", param->add_attr_tab.num_handle);
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CREAT_ATTR_TAB_EVT, The number handle = %x", param->add_attr_tab.num_handle);
         if (param->create.status == ESP_GATT_OK)
         {
             if (param->add_attr_tab.num_handle == HRS_IDX_NB)
@@ -768,7 +778,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 memcpy(heart_rate_handle_table, param->add_attr_tab.handles,
                        sizeof(heart_rate_handle_table));
                 esp_ble_gatts_start_service(heart_rate_handle_table[bike_service]);
-                printf("BLE_STATUS :: STARTED SERVICE HERE :: \n");
+                printf("BLE_STATUS :: STARTED SERVICE SUCCESSFULLY HERE :: \n");
             }
             else
             {
@@ -846,11 +856,19 @@ void app_main(void)
         ESP_LOGE(GATTS_TABLE_TAG, "%s init controller failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "controller initalized");
+    }
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret)
     {
         ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
         return;
+    }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_BT_MODE_BLE_ENABLED");
     }
 
     ESP_LOGI(GATTS_TABLE_TAG, "%s init bluetooth", __func__);
@@ -860,11 +878,19 @@ void app_main(void)
         ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_BLUEDROID_INITALIZED");
+    }
     ret = esp_bluedroid_enable();
     if (ret)
     {
         ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;
+    }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_BLUEDROID_ENABLED");
     }
 
     ret = esp_ble_gatts_register_callback(gatts_event_handler);
@@ -873,17 +899,29 @@ void app_main(void)
         ESP_LOGE(GATTS_TABLE_TAG, "gatts register error, error code = %x", ret);
         return;
     }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "GATTS_EVENT_HANDLER CALLED");
+    }
     ret = esp_ble_gap_register_callback(gap_event_handler);
     if (ret)
     {
         ESP_LOGE(GATTS_TABLE_TAG, "gap register error, error code = %x", ret);
         return;
     }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "GAP_EVENT_HANDLER CALLED");
+    }
     ret = esp_ble_gatts_app_register(ESP_HEART_RATE_APP_ID);
     if (ret)
     {
         ESP_LOGE(GATTS_TABLE_TAG, "gatts app register error, error code = %x", ret);
         return;
+    }
+    else
+    {
+        ESP_LOGI(GATTS_TABLE_TAG, "PROFILE REGISTERED");
     }
 
     /* set the security iocap & auth_req & key size & init key response key parameters to the stack*/
@@ -916,4 +954,6 @@ void app_main(void)
      * vTaskDelay(30000 / portTICK_PERIOD_MS);
      * remove_all_bonded_devices();
      */
+    vTaskDelay(30000 / portTICK_PERIOD_MS);
+    remove_all_bonded_devices();
 }
