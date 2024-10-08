@@ -1,4 +1,3 @@
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -12,12 +11,17 @@
 #include "esp_bt_defs.h"
 #include "esp_bt_main.h"
 #include "example_ble_sec_gatts_demo.h"
+#include "driver/gpio.h"
 
 #define GATTS_TABLE_TAG "SEC_GATTS_DEMO"
 // #define GATTS_DEMO_CHAR_VAL_LEN_MAX 0x40
 #define PREPARE_BUF_MAX_SIZE 1024
 
-static int connection_id = -1; // -1 indicates no active connection
+static float smoothed_rssi = -1.0;
+#define ALPHA 0.4
+
+static int connection_id = -1;             // -1 indicates no active connection
+static esp_bd_addr_t connected_device_bda; // Store the address of the connected device
 //  static int conn_id_save;
 
 // Static variables to store read/write data
@@ -49,6 +53,11 @@ static uint8_t adv_config_done = 0;
 static uint16_t heart_rate_handle_table[HRS_IDX_NB];
 
 static uint8_t test_manufacturer[3] = {'E', 'S', 'P'};
+
+// Function prototypes (declared before being used)
+static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+void app_main(void);
 
 static uint8_t sec_service_uuid[16] = {
     /* LSB <--------------------------------------------------------------------------------> MSB */
@@ -125,6 +134,31 @@ struct gatts_profile_inst
     uint16_t descr_handle;
     esp_bt_uuid_t descr_uuid;
 };
+
+TaskHandle_t rssi_task_handle = NULL; // defined task handle
+
+// Periodic task to read RSSI
+void rssi_read_task(void *pvParameters)
+{
+    printf("rssi_read_task have been triggered \n");
+    for (;;)
+    {
+        // int8_t current_rssi;
+
+        // printf("this is rssi_read_task");
+        //  Ensure there is a valid connection
+        printf("connection_id is: %d\n", connection_id);
+        if (connection_id != -1)
+        {
+            // Read the RSSI value of the connected device
+            // esp_ble_gap_read_rssi(connected_device_bda);
+            esp_ble_gap_read_rssi(connected_device_bda);
+        }
+
+        // Delay for a period (e.g., every 5 seconds)
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+} // Periodic task to read RSSI
 
 static void gatts_profile_event_handler(esp_gatts_cb_event_t event, // this part not found yet in yatri project-one-communication-dev\gatt_security_server
                                         esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
@@ -322,8 +356,8 @@ static void __attribute__((unused)) remove_all_bonded_devices(void)
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
-    ESP_LOGV(GATTS_TABLE_TAG, "GAP_EVT, event %d\n", event);
-
+    // ESP_LOGV(GATTS_TABLE_TAG, "GAP_EVT, event %d\n", event);
+    printf("GAP_EVT, event %d\n", event);
     switch (event)
     {
 
@@ -437,8 +471,21 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
 
             // Pairing Successful
             printf("BLE has been successful due to ble_auth_cmpl_evt success \n");
+
+            show_bonded_devices();
+            printf("connected_device_bda value is: %s \n", connected_device_bda);
+            esp_ble_gap_read_rssi(connected_device_bda);
+            // // Start the RSSI reading task
+            if (rssi_task_handle == NULL)
+            {
+                printf("I am inside xtaskcreate");
+                xTaskCreatePinnedToCore(rssi_read_task, "rssi_read_task", 2048, NULL, 5, &rssi_task_handle, 1); //&rssi_task_handle);
+                // xTaskCreate(rssi_read_task, "rssi_read_task", 2048, NULL, 5, &rssi_task_handle);
+            }
+            // Start the RSSI reading task
+            // printf("I am inside xtaskcreate \n");
+            // xTaskCreatePinnedToCore(rssi_read_task, "rssi_read_task", 2048, NULL, 5, &rssi_task_handle, 1); //&rssi_task_handle);
         }
-        show_bonded_devices();
         break;
     }
 
@@ -499,7 +546,31 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         ESP_LOGI(GATTS_TABLE_TAG, "ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT");
         if (param->read_rssi_cmpl.status == ESP_BT_STATUS_SUCCESS)
         {
-            ESP_LOGI(GATTS_TABLE_TAG, "RSSI for the connection: %d", param->read_rssi_cmpl.rssi);
+            // ESP_LOGI(GATTS_TABLE_TAG, "RSSI value is : %d", param->read_rssi_cmpl.rssi);
+            int8_t current_rssi = param->read_rssi_cmpl.rssi;
+
+            // making rssi value smooth starts here
+            if (smoothed_rssi == -1.0)
+            {
+                smoothed_rssi = current_rssi; // first rssi reading
+            }
+            else
+            {
+                // apply the exponential moving filter
+                smoothed_rssi = (ALPHA * current_rssi) + ((1 - ALPHA)) * smoothed_rssi;
+            }
+
+            ESP_LOGI(GATTS_TABLE_TAG, "Current RSSI: %d , Smoothed RSSI value is : %.2f", current_rssi, smoothed_rssi);
+            if (smoothed_rssi >= -60)
+            {
+                gpio_set_level(GPIO_NUM_2, 1);
+                printf("light on \n");
+            }
+            else
+            {
+                gpio_set_level(GPIO_NUM_2, 0);
+                printf("light off \n");
+            }
         }
         else
         {
@@ -637,7 +708,8 @@ void handle_write_event(esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 // }
 static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param)
 {
-    ESP_LOGV(GATTS_TABLE_TAG, "event = %x\n", event);
+    // ESP_LOGV(GATTS_TABLE_TAG, "event = %x\n", event);
+    printf("gatts_profile_event_handler event: %x\n", event);
     switch (event)
     {
 
@@ -651,6 +723,13 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
         esp_ble_gap_config_local_privacy(true);
         esp_ble_gatts_create_attr_tab(heart_rate_gatt_db, gatts_if,
                                       HRS_IDX_NB, HEART_RATE_SVC_INST_ID);
+        break;
+
+    case ESP_GATTS_WRITE_EVT:
+
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_WRITE_EVT, write value:");
+        esp_log_buffer_hex(GATTS_TABLE_TAG, param->write.value, param->write.len);
+        handle_write_event(gatts_if, param); // Call the function to handle write
         break;
 
     case ESP_GATTS_READ_EVT:
@@ -670,13 +749,6 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
         // rsp.attr_value.value[3] = 0x61;
         // esp_ble_gatts_send_response(gatts_if, param->read.conn_id, param->read.trans_id,
         // ESP_GATT_OK, &rsp);
-        break;
-
-    case ESP_GATTS_WRITE_EVT:
-
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_WRITE_EVT, write value:");
-        esp_log_buffer_hex(GATTS_TABLE_TAG, param->write.value, param->write.len);
-        handle_write_event(gatts_if, param); // Call the function to handle write
         break;
 
     case ESP_GATTS_EXEC_WRITE_EVT:
@@ -714,34 +786,57 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
 
     case ESP_GATTS_CONNECT_EVT:
         ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CONNECT_EVT");
-        esp_ble_conn_update_params_t conn_params = {0};
+        esp_ble_conn_update_params_t conn_params = {
+            .latency = 0,
+            .max_int = 0x30,
+            .min_int = 0x10,
+            .timeout = 400};
         // /* start security connect with peer device when receive the connect event sent by the master */
         esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
         memcpy(conn_params.bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+        memcpy(connected_device_bda, param->connect.remote_bda, sizeof(esp_bd_addr_t));
+
+        // // Start the RSSI reading task
+        // if (rssi_task_handle == NULL)
+        // {
+        //     printf("I am inside xtaskcreate");
+        //     xTaskCreate(rssi_read_task, "rssi_read_task", 2048, NULL, 5, &rssi_task_handle);
+        // }
+
         /* For the IOS system, please reference the apple official documents about the ble connection parameters restrictions. */
         conn_params.latency = 0;
         conn_params.max_int = 0x30; // max_int = 0x30*1.25ms = 40ms
         conn_params.min_int = 0x10; // min_int = 0x10*1.25ms = 20ms
         conn_params.timeout = 400;  // timeout = 400*10ms = 4000ms
-        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CONNECT_EVT, conn_id %d, remote %02x:%02x:%02x:%02x:%02x:%02x:",
-                 param->connect.conn_id,
-                 param->connect.remote_bda[0],
-                 param->connect.remote_bda[1],
-                 param->connect.remote_bda[2],
-                 param->connect.remote_bda[3],
-                 param->connect.remote_bda[4],
-                 param->connect.remote_bda[5]);
-        heart_rate_profile_tab[ESP_HEART_RATE_APP_ID].conn_id = param->connect.conn_id;
+        ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CONN_EVT, conn_id: %d\n", param->connect.conn_id);
+        connection_id = param->connect.conn_id;
+        // ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CONNECT_EVT, conn_id %d, remote %02x:%02x:%02x:%02x:%02x:%02x:",
+        //          param->connect.conn_id,
+        //          param->connect.remote_bda[0],
+        //          param->connect.remote_bda[1],
+        //          param->connect.remote_bda[2],
+        //          param->connect.remote_bda[3],
+        //          param->connect.remote_bda[4],
+        //          param->connect.remote_bda[5]);
+        // heart_rate_profile_tab[ESP_HEART_RATE_APP_ID].conn_id = param->connect.conn_id;
 
-        // esp_ble_gap_read_rssi();
         // start sent the update connection parameters to the peer device.
         esp_ble_gap_update_conn_params(&conn_params);
-        // Request RSSI from connected device
+        // Request RSSI of the connected device
+        // esp_ble_gap_read_rssi(param->connect.remote_bda);
         break;
 
     case ESP_GATTS_DISCONNECT_EVT:
         ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_DISCONNECT_EVT, disconnect reason 0x%x", param->disconnect.reason);
         ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_DISCONNECT_EVT, reason: 0x%x", param->disconnect.reason);
+
+        // Stop RSSI reading task
+        if (rssi_task_handle != NULL)
+        {
+            vTaskDelete(rssi_task_handle);
+            rssi_task_handle = NULL;
+        }
+
         // Clear the connection ID or mark the connection as invalid
         connection_id = -1; // Assuming connection_id is -1 when there is no connection
                             // Optionally restart advertising
@@ -836,6 +931,9 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
 void app_main(void)
 {
+
+    gpio_set_direction(GPIO_NUM_2, GPIO_MODE_OUTPUT);
+
     esp_err_t ret;
 
     // Initialize NVS.
@@ -913,6 +1011,7 @@ void app_main(void)
     {
         ESP_LOGI(GATTS_TABLE_TAG, "GAP_EVENT_HANDLER CALLED");
     }
+    printf("esp_ble_gatts_app_register called ESP_GATTS_REG_EVT \n");
     ret = esp_ble_gatts_app_register(ESP_HEART_RATE_APP_ID);
     if (ret)
     {
@@ -931,7 +1030,7 @@ void app_main(void)
     uint8_t init_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
     uint8_t rsp_key = ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK;
     // set static passkey
-    uint32_t passkey = 123456;
+    uint32_t passkey = rand();
     uint8_t auth_option = ESP_BLE_ONLY_ACCEPT_SPECIFIED_AUTH_DISABLE;
     uint8_t oob_support = ESP_BLE_OOB_DISABLE;
     esp_ble_gap_set_security_param(ESP_BLE_SM_SET_STATIC_PASSKEY, &passkey, sizeof(uint32_t));
@@ -946,7 +1045,6 @@ void app_main(void)
     and the init key means which key you can distribute to the slave. */
     esp_ble_gap_set_security_param(ESP_BLE_SM_SET_INIT_KEY, &init_key, sizeof(uint8_t));
     esp_ble_gap_set_security_param(ESP_BLE_SM_SET_RSP_KEY, &rsp_key, sizeof(uint8_t));
-    // ESP_GATTS_MTU_EVT(500);
 
     /* Just show how to clear all the bonded devices
      * Delay 30s, clear all the bonded devices
@@ -954,6 +1052,4 @@ void app_main(void)
      * vTaskDelay(30000 / portTICK_PERIOD_MS);
      * remove_all_bonded_devices();
      */
-    vTaskDelay(30000 / portTICK_PERIOD_MS);
-    remove_all_bonded_devices();
 }
